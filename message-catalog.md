@@ -92,6 +92,29 @@ The main handler registration (`m5({...})`) in `background.js` registers these c
 | `report-error` | Structured error reporting from any context |
 | `health-check-request` | (in health-check.js) Returns `health-check-response` with `"alive"` |
 
+## Native Messaging Protocol (Background → Native App)
+
+Messages sent via `browser.runtime.sendNativeMessage("")` with JSON envelope `{name: "core", data: JSON.stringify({type, data})}`.
+
+### Biometry Messages
+| Type | Subtype | Direction | Data |
+|------|---------|-----------|------|
+| `Biometry` | `save` | → Native | `{secrets: [{accountUuid, userUuid, muk: JWK, srpX}]}` |
+| `Biometry` | `unlock` | → Native, ← Response | Request: `{accounts: [...], useBiometry, useAppleWatch, fallbackPhrase, unlockPhrase}`. Response: `{secrets: [...], userFallback, userCancel}` |
+| `Biometry` | `remove` | → Native | `{accounts: [...], useBiometry, useAppleWatch, ...}` |
+| `Biometry` | `biometryAvailability` | → Native, ← Response | Response: `{current_availability, current_method, current_policy}` |
+
+All native messages have a 10-second timeout.
+
+### Desktop Connection Messages
+| Operation | Notes |
+|-----------|-------|
+| `requestUpgradeFromOfflineState` | Ask desktop app to re-establish online connection |
+| `requestDsecretProxy` | Get dSecret HMAC from desktop app for MFA bypass |
+| `saveBiometryUnlockSecrets` | Store MUK + SRP-X in OS secure enclave |
+| `getBiometryUnlockSecrets` | Retrieve after biometric verification |
+| `removeBiometryUnlockSecrets` | Remove from secure enclave |
+
 ## Content Script → Background Messages (from inline scripts)
 
 ### inject-content-scripts.js
@@ -143,9 +166,15 @@ Observed event names used in background's internal pub/sub system:
 - `accounts-and-vaults-changed`
 - `accounts-locked`
 - `can-request-unlock-changed`
-- `unleash-features-changed`
+- `unleash-features-changed` — feature flag updates from Unleash
 - `extension-first-survey`
 - `unified-panel-update`
+- `set-lock-screen-status` — pushed to UI during biometric unlock (`"working"`, `"error"`)
+
+### Server Notification Events (via WebSocket)
+- `ServerChanged` — server data changed, triggers sync
+- `ServerConnected` — WebSocket reconnected
+- `SessionRequestIdChanged` — session request ID changed, triggers context cache update
 
 ## Message Volume
 

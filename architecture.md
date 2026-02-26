@@ -55,19 +55,55 @@ Semantic chunk name patterns observed: `account-family`, `account-team`, `develo
 
 ## WASM Modules
 
-Seven WebAssembly modules in `assets/wasm/` (total ~30MB):
+Seven WebAssembly modules in `assets/wasm/` (total ~30MB), all compiled from Rust via `wasm-bindgen`:
 
-| Module | Size | Likely Purpose |
-|--------|------|----------------|
-| `op_wasm_b5x_bg` | 15.6MB | Core vault/crypto operations for b5x (extension) |
-| `op_wasm_xam_bg` | 11.2MB | XAM (cross-app management / device trust) backend |
-| `confidential_computing_bg` | 1.8MB | Confidential computing primitives |
-| `b5_trustlog_bg` | 1.3MB | Trust log generation/verification |
-| `b5_trust-verifier_bg` | 1.0MB | Trust verification |
-| `b5_mycelium_bg` | 319KB | Mycelium relay protocol (P2P communication for remote autofill) |
-| `b5_hpke_bg` | 82KB | Hybrid Public Key Encryption (RFC 9180) |
+| Module | Size | Purpose (confirmed) |
+|--------|------|---------------------|
+| `op_wasm_b5x_bg` | 15.6MB | **Core client** — vault encrypt/decrypt, SRP auth, key derivation, item management, page analysis, password generation, TOTP, Watchtower, SSO. This is the same Rust core used by desktop/mobile apps. |
+| `op_wasm_xam_bg` | 11.2MB | XAM (cross-app management) — device trust, endpoint management, Kolide/Trelica integration backend |
+| `confidential_computing_bg` | 1.8MB | Confidential computing attestation primitives |
+| `b5_trustlog_bg` | 1.3MB | Cryptographic audit log — signs/verifies trust log entries for group/user/domain changes (`wasmtrustlogclient_*` exports) |
+| `b5_trust-verifier_bg` | 1.0MB | Trust chain verification for account/device authorization |
+| `b5_mycelium_bg` | 319KB | P2P relay protocol for remote autofill (director.ai) — Noise-protocol-like handshake (`wasmpairingsession*`, `wasmsetuptransportsession*` exports) |
+| `b5_hpke_bg` | 82KB | Hybrid Public Key Encryption (RFC 9180) — used for item sharing, secure transport, sealed encryption (`wasmsealed_*` exports) |
 
 The background.js initialization calls `rA.init(e)` ("initializeCoreInterface") which loads the main WASM module. CSP allows `wasm-unsafe-eval` for this purpose.
+
+### WASM Core Interface (`rA.*`)
+
+The JS-facing core interface routes nearly all sensitive operations through WASM. Confirmed methods:
+
+| Category | Methods |
+|----------|---------|
+| **Fill/Autofill** | `fill`, `fillItem`, `startFillSession`, `fillSessionEvent`, `fillSessionStatus`, `nextFill`, `clearFillSession`, `fieldValueByIdentifier` |
+| **Save** | `createSaveObject`, `createItemFromSaveRequest`, `mergeSaveObjectWithItem`, `saveManagerCreate`, `saveManagerConfigure`, `saveManagerAction`, `saveManagerStatus`, `saveManagerMatchingItems`, `autoSaveMatchingItems`, `saveUrlsFromSaveRequest` |
+| **Password/Key Generation** | `generatePassword`, `generateSuggestedPassword`, `passwordGeneratorViewModel`, `createSshKeyItem` |
+| **TOTP** | `generateOneTimePasswordFromUrl`, `refreshTotp` |
+| **WebAuthn** | `webAuthnLogin`, `webAuthnRegister`, `webAuthnRPValidate` |
+| **Page Analysis** | `analyzePage`, `autosubmitDetectElements`, `inferBestTitle` |
+| **Email Alias** | `generateEmailAlias`, `enableEmailAliasSession`, `startEmailAliasSession`, `endEmailAliasSession`, `getEmailAliasSessionStatus`, `getEmailAliasAccountName`, `getEmailAliasState`, `updateEmailAlias` |
+| **Privacy/Brex** | `createPrivacyCard`, `validatePrivacyCardParams`, `getPrivacyFundingAccounts`, `createBrexVendorCardForUser`, `getAllCardsForBrexUser`, `getCurrentBrexUser` |
+| **Watchtower** | `compareWatchTowerDiff`, `handleWatchtowerAction`, `newCompromisedWebsiteItems` |
+| **Auth/SSO** | `signInWithEvent`, `signInWithProviderConfig`, `signInWithUrlToProvider`, `enrollTrustedDevice` |
+| **Item Management** | `getItemDetails`, `editItemFilter`, `getLargeTypeWithClientFormattedString`, `getLargeTypeWithFieldIdentifier`, `itemToReference` |
+| **URL/Domain** | `nakedDomainForUrl`, `nakedDomainForUrls`, `getRichIconForUrl`, `generateRichIconBackgroundColor`, `getAppleChangePasswordUrl`, `serviceIntegrationForUrl` |
+| **Account/UI** | `getAccountIcon`, `getVaultIcon`, `getEffectivePolicies`, `parseAccountType`, `parseVaultType`, `concealCreditCardNumber`, `getCreditCardType`, `generateSharableItemLink`, `parseMarkdown`, `setLocale`, `getSignInUrl`, `getSignInUrlVersion`, `getOauthAccessToken` |
+| **Lifecycle** | `init`, `ensureWasmIsInitialized`, `onLock` |
+| **Crypto** | `buildPermissionBundle`, `lessSafeOpenNaCl`, `unOpaqueFilePosition` |
+
+### Architectural Role of WASM
+
+**WASM is a portability layer, not a security boundary.** Key findings:
+
+1. **The Rust core is shared across all 1Password clients** (desktop, mobile, browser, CLI). WASM is how it runs in the browser. This ensures crypto correctness — one Rust implementation vs. hand-rolled JS.
+
+2. **Key material crosses the WASM↔JS boundary.** The Master Unlock Key (MUK) exists in the JS heap as an exportable JWK on the account handler object. SRP-X values are cached in JS. Decrypted item secrets (passwords, OTPs) are returned from WASM to JS for fill operations.
+
+3. **JS WebCrypto is used minimally** — only 4 `crypto.subtle.*` calls in all of background.js (2 `digest`, 1 `sign`, 1 `importKey`, 1 `decrypt`). The WASM core handles virtually all crypto: SRP, PBKDF2, HKDF, AES-GCM, AES-CBC, RSA-OAEP, ECDSA, HMAC, NaCl.
+
+4. **A compromised background page has full access** to all key material and decrypted secrets. WASM linear memory is readable from JS in the same origin.
+
+See [key-hierarchy.md](key-hierarchy.md) for the full key derivation and authentication model.
 
 ## Permission Profile
 

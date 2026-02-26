@@ -6,8 +6,9 @@ Static analysis of the 1Password browser extension for Firefox (`1pass-xpi`), ve
 
 | File | Description |
 |------|-------------|
-| [architecture.md](architecture.md) | Runtime topology, boot pipeline, permission model, WASM modules |
-| [message-catalog.md](message-catalog.md) | Complete message handler map extracted from source |
+| [architecture.md](architecture.md) | Runtime topology, boot pipeline, permission model, WASM core interface |
+| [key-hierarchy.md](key-hierarchy.md) | Key derivation, MUK lifecycle, auth flows, biometry, Duo MFA, crypto algorithms |
+| [message-catalog.md](message-catalog.md) | Complete message handler map extracted from source, including native messaging protocol |
 | [webauthn-analysis.md](webauthn-analysis.md) | WebAuthn monkey-patching, page-world IPC protocol, attack surface |
 | [trust-boundaries.md](trust-boundaries.md) | Trust zones, dataflow, sensitive data classes, attack surfaces |
 | [telemetry.md](telemetry.md) | Snowplow analytics, Sentry error reporting, DNS privacy proxy |
